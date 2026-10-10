@@ -4,7 +4,7 @@ Sistema distribuído, orientado a eventos, para receber notificações de agravo
 
 > **Disciplina:** Engenharia de Sistemas Distribuídos (2026.2), UFPB
 > **Entrega atual:** Projeto 01, definição do grupo e do tema (09/10/2026)
-> **Status:** proposta em avaliação. Ainda não há código neste repositório.
+> **Status:** proposta definida e entregue. Ainda não há código neste repositório.
 
 Todos os dados usados no projeto são **sintéticos**. Nenhuma informação real de pacientes é usada.
 
