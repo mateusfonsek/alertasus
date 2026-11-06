@@ -106,7 +106,104 @@ São cinco padrões da Seção 5 do enunciado, cobrindo quatro áreas. O mínimo
 
 ## Como executar
 
-Ainda não há código. As instruções de execução (Docker Compose) entram a partir do Projeto 02.
+### Pré-requisitos
+
+- [Docker](https://docs.docker.com/get-docker/) (v20+)
+- [Docker Compose](https://docs.docker.com/compose/install/) (v2)
+- (Opcional) `curl` para testar os endpoints manualmente
+
+### Subir o ambiente
+
+Na raiz do repositório:
+
+```bash
+docker compose up --build -d
+```
+
+Isso constrói as imagens dos microsserviços e sobe **7 containers**:
+
+| Serviço | Porta local | Descrição |
+|---|---|---|
+| `rabbitmq` | 5672 / 15672 | Broker de mensagens (+ Management UI na 15672) |
+| `postgres` | 5432 | Banco de dados relacional |
+| `redis` | 6379 | Cache de consultas |
+| `ingestion` | 8001 | Serviço de Ingestão (recebe notificações) |
+| `aggregation` | 8002 | Serviço de Agregação (atualiza views) |
+| `alerts` | 8003 | Serviço de Alertas (detecta surtos) |
+| `query` | 8004 | Serviço de Consulta (leitura do painel) |
+
+### Verificar que está tudo no ar
+
+```bash
+docker compose ps
+```
+
+Você deve ver os **7 containers** com status `Up` (e `(healthy)` para `rabbitmq`, `postgres` e `redis`).
+
+Testar os endpoints de health:
+
+```bash
+curl localhost:8001/health   # {"status":"ok","service":"ingestion"}
+curl localhost:8002/health   # {"status":"ok","service":"aggregation"}
+curl localhost:8003/health   # {"status":"ok","service":"alerts"}
+curl localhost:8004/health   # {"status":"ok","service":"query"}
+```
+
+### Interface do RabbitMQ
+
+Acesse [http://localhost:15672](http://localhost:15672/) no navegador:
+
+- **Usuário:** `alertasus`
+- **Senha:** `alertasus`
+
+### Rodar os testes
+
+Os testes são executados **dentro dos containers**, sem precisar instalar Python localmente:
+
+```bash
+for svc in ingestion aggregation alerts query; do
+  echo "=== $svc ==="
+  docker compose exec $svc ruff check .
+  docker compose exec $svc pytest -q
+done
+```
+
+Alternativamente, rode localmente com um ambiente virtual:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+cd services/ingestion
+pip install -r requirements.txt
+ruff check .
+pytest -q
+```
+
+### Derrubar o ambiente
+
+```bash
+docker compose down        # para os containers, preserva os dados do Postgres
+docker compose down -v     # para os containers e apaga também o volume (zera o banco)
+```
+
+### Estrutura de pastas (relevante para execução)
+
+```text
+alertasus/
+├── docker-compose.yml           # orquestração dos 7 serviços
+├── .github/workflows/ci.yml     # pipeline de CI
+├── services/
+│   ├── ingestion/               # cada serviço é independente
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   ├── app/main.py
+│   │   └── tests/test_health.py
+│   ├── aggregation/
+│   ├── alerts/
+│   └── query/
+└── docs/                        # ADRs, C4, stack, padrões
+```
 
 ## Ferramentas de IA utilizadas
 
