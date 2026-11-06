@@ -3,8 +3,9 @@
 Sistema distribuído, orientado a eventos, para receber notificações de agravos (dengue, chikungunya, síndrome gripal) de várias unidades de saúde e agregá-las por região e semana epidemiológica em painéis quase em tempo real.
 
 > **Disciplina:** Engenharia de Sistemas Distribuídos (2026.2), UFPB
-> **Entrega atual:** Projeto 01, definição do grupo e do tema (09/10/2026)
-> **Status:** proposta definida e entregue. Ainda não há código neste repositório.
+> **Entrega atual:** Projeto 02, arquitetura e base executável.
+> **Status:** há uma configuração Docker Compose, CI e quatro serviços Python com endpoints básicos de health check. Os fluxos de negócio ainda não estão implementados.
+> **Stack:** veja [docs/stack.md](docs/stack.md) para tecnologias configuradas, instruções locais e itens ainda planejados.
 
 Todos os dados usados no projeto são **sintéticos**. Nenhuma informação real de pacientes é usada.
 
