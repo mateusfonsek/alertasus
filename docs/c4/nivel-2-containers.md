@@ -25,7 +25,7 @@ flowchart TB
 
         query["<b>Serviço de Consulta</b><br/>[Python, FastAPI]<br/><br/>Expõe as agregações e os alertas; lê apenas as views agregadas"]
 
-        redis[("<b>Cache</b><br/>[Redis 7]<br/><br/>Respostas de consulta (cache-aside)")]
+        redis[("<b>Cache</b><br/>[Redis 7]<br/><br/>Respostas de consulta (cache-aside) e IDs de notificações já vistas (idempotência)")]
 
         painel["<b>Painel</b><br/>[Grafana]<br/><br/>Gráficos de casos por região e semana; lista de alertas"]
 
@@ -36,6 +36,7 @@ flowchart TB
     unidade -->|"Envia notificações<br/>[HTTPS/JSON + JWT]"| gateway
     simulador -->|"Envia notificações sintéticas<br/>[HTTPS/JSON + JWT]"| gateway
     gateway -->|"Encaminha POST de notificação<br/>[HTTP/JSON]"| ingestion
+    ingestion -->|"Reserva o ID da notificação<br/>[RESP]"| redis
     ingestion -->|"Publica evento de notificação<br/>[AMQP]"| broker
 
     %% Fan-out para os consumidores
@@ -64,8 +65,7 @@ flowchart TB
     class gestor person
     class ingestion,aggregation,alerts,query,broker,postgres,redis container
     class gateway,painel,prometheus planned
-    class unidade external
-    class simulador externalPlanned
+    class unidade,simulador external
 
     style alertasus fill:transparent,stroke:#1168bd,stroke-width:2px,stroke-dasharray:3 3
 ```
@@ -77,16 +77,16 @@ Bordas tracejadas indicam containers planejados que ainda não estão no `docker
 | Container | Tecnologia | Responsabilidade | Porta local | Status |
 |---|---|---|---|---|
 | API Gateway | Kong (modo DB-less) | Ponto único de entrada. Valida o JWT de cada unidade e aplica rate limiting por unidade (HTTP 429 no excesso). | a definir | Planejado |
-| Serviço de Ingestão | Python 3.12, FastAPI | Valida o payload, descarta reenvios pelo ID da notificação e publica o evento. Responde rápido porque não processa nada além disso. | 8001 | Esqueleto no compose |
+| Serviço de Ingestão | Python 3.12, FastAPI | Valida o payload conforme o [contrato](../contratos/evento-notificacao.md), descarta reenvios pelo ID da notificação (Redis) e publica o evento com confirmação do broker. Responde rápido porque não processa nada além disso. | 8001 | Implementado |
 | Broker de mensagens | RabbitMQ 3.13 | Exchange fanout copia cada evento para uma fila por consumidor. Mensagens que esgotam as tentativas vão para a DLQ. | 5672 / 15672 | No compose |
 | Serviço de Agregação | Python 3.12, FastAPI | Consome a fila de agregação e mantém as contagens por município, bairro e semana epidemiológica. | 8002 | Esqueleto no compose |
 | Serviço de Alertas | Python 3.12, FastAPI | Consome a fila de alertas, compara com o limiar configurado e registra o alerta. | 8003 | Esqueleto no compose |
 | Banco de dados | PostgreSQL 16 | Armazena os casos processados, as Materialized Views e os alertas. | 5432 | No compose |
 | Serviço de Consulta | Python 3.12, FastAPI | API de leitura do painel. Só lê as views agregadas, com cache-aside no Redis. | 8004 | Esqueleto no compose |
-| Cache | Redis 7 | Guarda respostas de consulta com TTL curto para aliviar o Postgres. | 6379 | No compose |
+| Cache | Redis 7 | Guarda respostas de consulta com TTL curto para aliviar o Postgres e os IDs de notificações já vistas pela Ingestão ([ADR 0006](../adr/0006-idempotencia-notificacoes.md)). | 6379 | No compose |
 | Painel | Grafana | Interface da equipe de vigilância: casos por região e semana, alertas e métricas técnicas. | a definir | Planejado |
 | Métricas | Prometheus | Coleta métricas dos 4 serviços para os testes de carga e para o painel técnico. | a definir | Planejado |
-| Simulador de unidades | Python / k6 | Fora da fronteira do sistema. Faz o papel das unidades de saúde na demo e nos testes. | — | Planejado |
+| Simulador de unidades | Python / k6 | Fora da fronteira do sistema. Faz o papel das unidades de saúde na demo ([`simulator/`](../../simulator/)) e nos testes de carga ([`tests/load/`](../../tests/load/)). | — | Implementado (perfil `demo` do compose) |
 
 ## Fluxos principais
 
@@ -94,7 +94,7 @@ Bordas tracejadas indicam containers planejados que ainda não estão no `docker
 
 1. A unidade (ou o simulador) envia `POST` com a notificação e o JWT ao **API Gateway**.
 2. O Gateway valida o token, verifica o limite da unidade e encaminha à **Ingestão**.
-3. A Ingestão valida o payload, ignora o reenvio se o ID já foi visto, publica o evento no **RabbitMQ** e responde à unidade.
+3. A Ingestão valida o payload e reserva o ID da notificação no **Redis**; se o ID já foi visto, responde `duplicada` sem publicar. Caso contrário, publica o evento no **RabbitMQ**, espera a confirmação do broker e responde `202` à unidade.
 4. A exchange fanout entrega uma cópia à fila da **Agregação** e outra à fila de **Alertas**. Os dois consomem de forma independente: se um cair, o outro continua e as mensagens dele ficam retidas na fila.
 5. A Agregação atualiza as contagens no **PostgreSQL**. Alertas registra um alerta se o limiar for ultrapassado.
 6. Falhas transitórias são reprocessadas (retry). Mensagens inválidas ou que esgotam as tentativas vão para a **DLQ**.
@@ -120,7 +120,7 @@ Bordas tracejadas indicam containers planejados que ainda não estão no `docker
 Estes itens afetam o diagrama e devem ser fechados nos ADRs (`docs/adr/`) ou no `docs/stack.md`. Depois disso, atualizar este arquivo.
 
 1. **Gateway: decidido.** O Kong em modo DB-less foi escolhido no [ADR 0005](../adr/0005-api-gateway-kong.md); a caixa do Gateway já exibe essa tecnologia.
-2. **Onde a Ingestão guarda os IDs já vistos (idempotência).** No compose atual, a Ingestão só tem acesso ao RabbitMQ. As opções são dar a ela acesso ao Redis ou ao PostgreSQL, ou deduplicar na Agregação com uma restrição `UNIQUE` no ID da notificação. Cada opção acrescenta ou move uma seta no diagrama.
+2. **Idempotência: decidido.** Duas camadas ([ADR 0006](../adr/0006-idempotencia-notificacoes.md)): a Ingestão reserva os IDs no Redis (seta Ingestão → Cache) e cada consumidor usa chave primária em `notificacao_id`.
 3. **Banco compartilhado.** Agregação, Alertas e Consulta usam o mesmo banco `alertasus`, o que é um *shared database* e não um *database-per-service*. Vale registrar esse trade-off num ADR: é mais simples para as Materialized Views, mas acopla os serviços ao mesmo esquema.
 4. **Origem dos dados do Grafana.** O diagrama segue a proposta (Grafana → Gateway → Consulta). A alternativa é o Grafana ler o PostgreSQL direto, mais simples de configurar, porém o painel deixaria de passar pelo cache e pela API de leitura.
-5. **Containers planejados fora do compose:** Gateway, Grafana, Prometheus e Simulador.
+5. **Containers planejados fora do compose:** Gateway, Grafana e Prometheus.
