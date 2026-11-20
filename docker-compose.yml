@@ -12,7 +12,9 @@ services:
       RABBITMQ_DEFAULT_USER: alertasus
       RABBITMQ_DEFAULT_PASS: alertasus
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      # Roda como o usuário rabbitmq: executado como root, o CLI pode criar o
+      # .erlang.cookie antes do servidor, com dono root, e o boot falha (eacces).
+      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,10 +62,21 @@ services:
       - "8001:8000"
     environment:
       RABBITMQ_URL: amqp://alertasus:alertasus@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379/0
       SERVICE_NAME: ingestion
+      # Nos testes de carga: LOG_LEVEL=WARNING docker compose up -d ingestion
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - alertasus-net
 
@@ -114,6 +127,21 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+    networks:
+      - alertasus-net
+
+  # ----- Ferramentas (fora da fronteira do sistema) -----
+  # Só sobe sob demanda, por exemplo:
+  #   docker compose run --rm simulator --cenario surto --taxa 20 --duracao 120
+  simulator:
+    build: ./simulator
+    container_name: alertasus-simulator
+    profiles: ["demo"]
+    environment:
+      ALVO_URL: http://ingestion:8000
+    depends_on:
+      ingestion:
         condition: service_healthy
     networks:
       - alertasus-net
