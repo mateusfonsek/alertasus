@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "Agravo": {
+      "enum": [
+        "dengue",
+        "chikungunya",
+        "sindrome_gripal"
+      ],
+      "title": "Agravo",
+      "type": "string"
+    }
+  },
+  "description": "Evento publicado na exchange 'notificacoes' do RabbitMQ.",
+  "properties": {
+    "evento_id": {
+      "format": "uuid",
+      "title": "Evento Id",
+      "type": "string"
+    },
+    "tipo": {
+      "const": "notificacao.recebida",
+      "default": "notificacao.recebida",
+      "title": "Tipo",
+      "type": "string"
+    },
+    "versao": {
+      "const": 1,
+      "default": 1,
+      "title": "Versao",
+      "type": "integer"
+    },
+    "notificacao_id": {
+      "format": "uuid",
+      "title": "Notificacao Id",
+      "type": "string"
+    },
+    "unidade_id": {
+      "minLength": 1,
+      "title": "Unidade Id",
+      "type": "string"
+    },
+    "agravo": {
+      "$ref": "#/$defs/Agravo"
+    },
+    "municipio_ibge": {
+      "pattern": "^\\d{7}$",
+      "title": "Municipio Ibge",
+      "type": "string"
+    },
+    "bairro": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Bairro",
+      "type": "string"
+    },
+    "semana_epidemiologica": {
+      "description": "Formato AAAA-SS.",
+      "pattern": "^\\d{4}-\\d{2}$",
+      "title": "Semana Epidemiologica",
+      "type": "string"
+    },
+    "data_inicio_sintomas": {
+      "format": "date",
+      "title": "Data Inicio Sintomas",
+      "type": "string"
+    },
+    "data_notificacao": {
+      "format": "date",
+      "title": "Data Notificacao",
+      "type": "string"
+    },
+    "enviado_em": {
+      "format": "date-time",
+      "title": "Enviado Em",
+      "type": "string"
+    },
+    "recebido_em": {
+      "format": "date-time",
+      "title": "Recebido Em",
+      "type": "string"
+    }
+  },
+  "required": [
+    "evento_id",
+    "notificacao_id",
+    "unidade_id",
+    "agravo",
+    "municipio_ibge",
+    "bairro",
+    "semana_epidemiologica",
+    "data_inicio_sintomas",
+    "data_notificacao",
+    "enviado_em",
+    "recebido_em"
+  ],
+  "title": "EventoNotificacao",
+  "type": "object"
+}

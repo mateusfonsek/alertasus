@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "Agravo": {
+      "enum": [
+        "dengue",
+        "chikungunya",
+        "sindrome_gripal"
+      ],
+      "title": "Agravo",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Corpo de POST /api/v1/notificacoes.",
+  "properties": {
+    "notificacao_id": {
+      "description": "UUID gerado pela unidade; chave de idempotência.",
+      "format": "uuid",
+      "title": "Notificacao Id",
+      "type": "string"
+    },
+    "agravo": {
+      "$ref": "#/$defs/Agravo"
+    },
+    "municipio_ibge": {
+      "description": "Código IBGE do município (7 dígitos).",
+      "pattern": "^\\d{7}$",
+      "title": "Municipio Ibge",
+      "type": "string"
+    },
+    "bairro": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Bairro",
+      "type": "string"
+    },
+    "data_inicio_sintomas": {
+      "format": "date",
+      "title": "Data Inicio Sintomas",
+      "type": "string"
+    },
+    "data_notificacao": {
+      "format": "date",
+      "title": "Data Notificacao",
+      "type": "string"
+    },
+    "enviado_em": {
+      "description": "Instante do envio pela unidade, com fuso horário.",
+      "format": "date-time",
+      "title": "Enviado Em",
+      "type": "string"
+    }
+  },
+  "required": [
+    "notificacao_id",
+    "agravo",
+    "municipio_ibge",
+    "bairro",
+    "data_inicio_sintomas",
+    "data_notificacao",
+    "enviado_em"
+  ],
+  "title": "NotificacaoEntrada",
+  "type": "object"
+}
