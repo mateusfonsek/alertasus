@@ -46,7 +46,7 @@ As tecnologias e padrões abaixo fazem parte da proposta, mas não devem ser con
 | RabbitMQ com fanout, filas de consumidores, retry e DLQ | Planejado | O broker está no Compose; topologia, consumidores e política de retry/DLQ ainda precisam ser implementados. |
 | PostgreSQL com dados de domínio e Materialized Views | Planejado | O banco está no Compose; esquema, migrações e views não estão definidos no código atual. |
 | Redis como cache-aside do serviço de consulta | Planejado | Redis está no Compose; integração e política de expiração ainda não foram implementadas. |
-| API Gateway | Em aberto | Kong ou Traefik; autenticação JWT, rate limiting e roteamento estão previstos. |
+| API Gateway | Decidido, não implementado | Kong em modo DB-less ([ADR 0005](adr/0005-api-gateway-kong.md)): plugins nativos de JWT e de rate limiting por consumidor; container e configuração entram no Projeto 03. |
 | Painel | Planejado | Grafana é a tecnologia prevista; não há container configurado. |
 | Coleta de métricas | Planejado | Prometheus é a tecnologia prevista; não há container nem endpoints `/metrics` configurados. |
 | Carga e simulação | Planejado | k6 está previsto para carga; o simulador de unidades também não está no repositório atual. |

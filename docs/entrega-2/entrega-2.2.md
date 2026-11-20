@@ -71,7 +71,7 @@ flowchart TB
     subgraph alertasus["AlertaSUS [Sistema de software]"]
         direction TB
 
-        gateway["<b>API Gateway</b><br/>[Kong ou Traefik]<br/><br/>Autentica as unidades (JWT), aplica rate limiting por unidade e roteia as requisições"]
+        gateway["<b>API Gateway</b><br/>[Kong, modo DB-less]<br/><br/>Autentica as unidades (JWT), aplica rate limiting por unidade e roteia as requisições"]
 
         ingestion["<b>Serviço de Ingestão</b><br/>[Python, FastAPI]<br/><br/>Valida a notificação, garante idempotência pelo ID e publica o evento no broker"]
 
@@ -131,7 +131,7 @@ As setas pontilhadas representam tráfego de observabilidade, fora do fluxo de n
 
 | Container | Tecnologia | Responsabilidade | Porta local | Status |
 |---|---|---|---:|---|
-| API Gateway | Kong ou Traefik | Ponto único de entrada. Valida o JWT de cada unidade e aplica rate limiting por unidade (HTTP 429 no excesso). | a definir | Planejado |
+| API Gateway | Kong (modo DB-less) | Ponto único de entrada. Valida o JWT de cada unidade e aplica rate limiting por unidade (HTTP 429 no excesso). | a definir | Planejado |
 | Serviço de Ingestão | Python 3.12, FastAPI | Valida o payload, descarta reenvios pelo ID da notificação e publica o evento. Responde rapidamente porque não processa além disso. | 8001 | Esqueleto no Compose |
 | Broker de mensagens | RabbitMQ 3.13 | Exchange fanout copia cada evento para uma fila por consumidor. Mensagens que esgotam as tentativas vão para a DLQ. | 5672 / 15672 | No Compose |
 | Serviço de Agregação | Python 3.12, FastAPI | Consome a fila de agregação e mantém as contagens por município, bairro e semana epidemiológica. | 8002 | Esqueleto no Compose |
@@ -172,7 +172,7 @@ As setas pontilhadas representam tráfego de observabilidade, fora do fluxo de n
 
 #### Pontos em aberto da arquitetura
 
-1. **Gateway: Kong ou Traefik.** A escolha altera a tecnologia exibida na caixa do Gateway.
+1. **Gateway: decidido.** O Kong em modo DB-less foi escolhido no [ADR 0005](docs/adr/0005-api-gateway-kong.md); a caixa do Gateway já exibe essa tecnologia.
 2. **Armazenamento dos IDs já vistos pela Ingestão.** No Compose atual, a Ingestão só tem acesso ao RabbitMQ. As alternativas são dar acesso ao Redis ou ao PostgreSQL, ou deduplicar na Agregação com uma restrição `UNIQUE` no ID da notificação.
 3. **Banco compartilhado.** Agregação, Alertas e Consulta usam o mesmo banco `alertasus`, caracterizando um *shared database*, e não *database-per-service*. Isso simplifica as Materialized Views, mas acopla os serviços ao mesmo esquema.
 4. **Origem dos dados do Grafana.** O diagrama segue a proposta de Grafana → Gateway → Consulta. Uma alternativa seria o Grafana ler o PostgreSQL diretamente, mas isso eliminaria o cache e a API de leitura.
@@ -182,167 +182,15 @@ As setas pontilhadas representam tráfego de observabilidade, fora do fluxo de n
 
 ## 2. ADRs — Architecture Decision Records
 
-Os ADRs abaixo registram, nesta entrega, o contexto, a decisão e os trade-offs das principais escolhas arquiteturais. Eles estão documentados integralmente neste arquivo; o diretório [`docs/adr/`](docs/adr/) permanece reservado para uma futura separação dos registros em arquivos individuais.
+Os ADRs registram o contexto, a decisão, as alternativas e os trade-offs das principais escolhas arquiteturais. Cada registro fica em um arquivo próprio no diretório [`docs/adr/`](docs/adr/):
 
-### ADR 0001 — Microsserviços com CQRS
-
-**Status:** Aceito — arquitetura-base do Projeto 02.
-
-**Contexto e problema:** O AlertaSUS recebe notificações de várias unidades de saúde e precisa continuar aceitando novos eventos mesmo quando há um pico de volume. Ao mesmo tempo, a equipe de vigilância precisa consultar agregações e alertas com baixa latência. Se o mesmo componente recebesse, validasse, processasse, agregasse e consultasse todos os dados de forma síncrona, uma carga elevada de escrita poderia degradar o painel e dificultar a evolução independente das funcionalidades.
-
-**Forças que influenciaram a decisão:**
-
-- separar o recebimento rápido das notificações do processamento mais pesado;
-- permitir escalabilidade independente dos fluxos de escrita e leitura;
-- reduzir o acoplamento entre ingestão, agregação, alertas e consulta;
-- manter o caminho de leitura otimizado para as necessidades do painel;
-- facilitar a evolução dos serviços sem transformar uma alteração em um deploy monolítico.
-
-**Decisão:** Adotar uma arquitetura de microsserviços com CQRS. O Serviço de Ingestão representa a entrada de comandos e notificações; Agregação e Alertas processam os eventos de forma assíncrona; e o Serviço de Consulta representa o lado de leitura, acessando dados agregados e cache. A separação é lógica e também estrutural: cada serviço possui seu próprio diretório, `Dockerfile`, `requirements.txt`, aplicação FastAPI e testes.
-
-**Alternativas consideradas:**
-
-1. **Aplicação monolítica síncrona:** seria mais simples no início, mas concentraria os picos de escrita e leitura no mesmo processo e dificultaria o isolamento dos componentes.
-2. **Serviço único com módulos internos:** reduziria a complexidade operacional, porém manteria maior acoplamento de implantação e de escala.
-3. **Separação completa com bancos independentes desde o início:** ofereceria isolamento maior, mas aumentaria a complexidade de consistência, migrações e operação para o estágio inicial do projeto.
-
-**Consequências positivas:**
-
-- ingestão, processamento e consulta podem ser dimensionados separadamente;
-- uma falha ou lentidão no processamento não precisa interromper imediatamente a entrada de notificações;
-- as responsabilidades ficam explícitas e alinhadas aos limites dos serviços;
-- o modelo de leitura pode ser otimizado para consultas agregadas.
-
-**Consequências negativas e riscos:**
-
-- surge consistência eventual entre a notificação recebida e o dado exibido no painel;
-- rastreamento, observabilidade e diagnóstico ficam mais complexos;
-- eventos podem ser duplicados ou processados fora de ordem, exigindo idempotência;
-- a solução depende de contratos estáveis entre serviços e de mecanismos de retry.
-
-**Relação com a implementação:** A decisão já aparece na separação dos quatro serviços FastAPI e no Compose. Nesta entrega, eles ainda possuem endpoints básicos de health check; consumidores, comandos, consultas e persistência de negócio serão implementados nas próximas etapas.
-
-### ADR 0002 — RabbitMQ com fanout e Dead-Letter Queue
-
-**Status:** Aceito — infraestrutura preparada; topologia de negócio pendente.
-
-**Contexto e problema:** Cada notificação deve alimentar pelo menos dois processamentos independentes: a atualização das agregações e a verificação de limiares para geração de alertas. O produtor não deve precisar conhecer a implementação ou a disponibilidade de cada consumidor. Além disso, uma falha temporária não deve descartar o evento, enquanto uma mensagem inválida não deve ser repetida indefinidamente e bloquear a fila.
-
-**Forças que influenciaram a decisão:**
-
-- distribuição de um mesmo evento para múltiplos consumidores;
-- desacoplamento temporal entre produtor e consumidores;
-- possibilidade de cada consumidor ter sua própria fila e ritmo de processamento;
-- confirmação de entrega e retenção durante indisponibilidades;
-- tratamento explícito de falhas permanentes por meio da DLQ.
-
-**Decisão:** Adotar RabbitMQ como broker assíncrono. O Serviço de Ingestão publicará notificações em uma exchange `fanout`; essa exchange distribuirá cópias para uma fila de Agregação e uma fila de Alertas. Mensagens com falhas transitórias deverão passar por retry controlado. Mensagens inválidas ou que excederem o limite de tentativas deverão ser encaminhadas para uma Dead-Letter Queue, preservando o conteúdo para investigação e possível reprocessamento.
-
-**Alternativas consideradas:**
-
-1. **Chamadas HTTP síncronas entre Ingestão, Agregação e Alertas:** simplificariam o fluxo inicial, mas aumentariam o acoplamento e fariam a disponibilidade do produtor depender dos consumidores.
-2. **Redis Streams:** poderia atender a parte do fluxo, mas RabbitMQ oferece recursos mais diretamente alinhados a exchanges, filas, confirmações e DLQs.
-3. **Kafka:** seria adequado para alto volume e retenção de eventos, porém adicionaria complexidade operacional desnecessária para o escopo atual.
-4. **Uma única fila compartilhada:** não permitiria que Agregação e Alertas recebessem independentemente a mesma notificação.
-
-**Consequências positivas:**
-
-- Agregação e Alertas podem parar ou escalar de forma independente;
-- mensagens podem aguardar enquanto um consumidor está indisponível;
-- a DLQ evita perda silenciosa e facilita diagnóstico;
-- o produtor permanece desacoplado da lógica dos consumidores.
-
-**Consequências negativas e riscos:**
-
-- a topologia precisa ser configurada corretamente, incluindo exchange, filas, bindings e políticas;
-- retry mal configurado pode causar tempestade de mensagens ou reprocessamento infinito;
-- consumidores precisam ser idempotentes para lidar com redelivery;
-- é necessário monitorar tamanho das filas, idade das mensagens e volume da DLQ;
-- a ordem global dos eventos não é garantida entre consumidores independentes.
-
-**Relação com a implementação:** O container RabbitMQ, suas portas e sua URL interna já estão definidos no `docker-compose.yml`. A exchange, as filas, os consumidores, as confirmações e a DLQ ainda não foram implementados nesta base.
-
-### ADR 0003 — PostgreSQL e Redis com Materialized Views
-
-**Status:** Aceito — componentes disponíveis; modelo de dados pendente.
-
-**Contexto e problema:** O painel precisa consultar casos por município, bairro e semana epidemiológica, além de alertas disparados. Fazer agregações diretamente sobre todos os eventos a cada requisição aumentaria o custo da leitura e poderia comprometer a meta de p95 inferior a 100 ms. Também é necessário manter uma fonte persistente e consistente para os dados, sem transformar o cache na única fonte de verdade.
-
-**Forças que influenciaram a decisão:**
-
-- necessidade de consultas agregadas por dimensões epidemiológicas;
-- persistência relacional e consistência transacional para os dados processados;
-- redução do custo de recomputar agregações;
-- baixa latência para consultas repetidas;
-- possibilidade de reconstruir ou atualizar o cache a partir do PostgreSQL.
-
-**Decisão:** Utilizar PostgreSQL como fonte persistente para notificações processadas, agregações e alertas. O Serviço de Agregação deverá manter Materialized Views por município, bairro e semana epidemiológica. O Serviço de Consulta deverá seguir o padrão cache-aside: primeiro consulta o Redis; em caso de cache miss, consulta as views no PostgreSQL e grava a resposta no Redis com TTL definido.
-
-**Alternativas consideradas:**
-
-1. **Calcular as agregações em cada requisição:** reduziria a necessidade de atualização de views, mas aumentaria a latência e o uso de CPU/banco sob carga.
-2. **Usar somente Redis:** ofereceria baixa latência, porém não seria adequado como fonte principal durável para o histórico e dificultaria reconstrução dos dados.
-3. **Usar somente PostgreSQL sem cache:** simplificaria a operação, mas perderia desempenho em consultas repetidas e concorrentes.
-4. **Banco NoSQL:** poderia facilitar algumas escritas, mas não oferece vantagem suficiente para as consultas relacionais e agregações previstas nesta etapa.
-
-**Consequências positivas:**
-
-- as consultas leem resultados pré-agregados;
-- o Redis reduz leituras repetidas no PostgreSQL;
-- o PostgreSQL permanece como fonte de recuperação quando o cache expira;
-- a combinação atende à meta de desempenho sem sacrificar a persistência relacional.
-
-**Consequências negativas e riscos:**
-
-- Materialized Views podem ficar desatualizadas até sua atualização;
-- o cache pode devolver respostas temporariamente antigas;
-- TTL e invalidação precisam ser definidos por tipo de consulta;
-- alterações no modelo de dados exigirão migrações e possível reconstrução das views;
-- o PostgreSQL compartilhado cria acoplamento entre Agregação, Alertas e Consulta.
-
-**Relação com a implementação:** PostgreSQL, Redis, volume `pg_data` e variáveis de conexão já estão declarados no Compose. Ainda não existem schema, migrações, Materialized Views, consultas de negócio ou integração efetiva com Redis nesta entrega.
-
-### ADR 0004 — Docker Compose para desenvolvimento e CI
-
-**Status:** Aceito — padrão de execução local e validação contínua.
-
-**Contexto e problema:** O projeto possui quatro microsserviços Python e três componentes de infraestrutura. Instalar e configurar tudo manualmente em cada máquina produziria diferenças de ambiente, problemas de dependência e uma entrada mais difícil para novos integrantes. O pipeline também precisa verificar se a composição continua válida.
-
-**Forças que influenciaram a decisão:**
-
-- execução local com um comando padronizado;
-- isolamento de dependências entre serviços;
-- rede interna reproduzível;
-- healthchecks para controlar a ordem de inicialização;
-- validação automatizada no GitHub Actions;
-- baixo custo operacional para o estágio acadêmico do projeto.
-
-**Decisão:** Utilizar Docker Compose v2 para orquestrar RabbitMQ, PostgreSQL, Redis e os quatro microsserviços em uma rede comum. Cada microsserviço possui seu próprio `Dockerfile` e `requirements.txt`. O Compose usa `depends_on` com `service_healthy`; o CI executa `docker compose config -q`, além de lint e testes em uma matriz por serviço.
-
-**Alternativas consideradas:**
-
-1. **Execução manual com Python local:** exigiria instalação e configuração repetidas, além de aumentar diferenças entre ambientes.
-2. **Um único Dockerfile para toda a aplicação:** reduziria arquivos, mas eliminaria o isolamento de dependências e processos.
-3. **Kubernetes desde o início:** seria mais próximo de uma operação de produção, porém desproporcional à escala e ao objetivo desta entrega.
-4. **Máquinas virtuais ou scripts específicos por sistema operacional:** aumentariam a manutenção e reduziriam a portabilidade.
-
-**Consequências positivas:**
-
-- ambiente local reproduzível para toda a equipe;
-- containers isolados e conectados por nomes de serviço;
-- infraestrutura e serviços podem ser iniciados, verificados e encerrados de forma uniforme;
-- o CI detecta erros de sintaxe e de qualidade antes da integração;
-- o volume `pg_data` preserva os dados do PostgreSQL entre reinicializações comuns.
-
-**Consequências negativas e riscos:**
-
-- Docker passa a ser um pré-requisito para execução completa;
-- os containers consomem memória, CPU e portas locais;
-- credenciais no Compose são aceitáveis apenas para desenvolvimento local;
-- o volume do PostgreSQL exige limpeza consciente com `docker compose down -v`;
-- Compose não fornece, sozinho, alta disponibilidade, autoscaling ou observabilidade de produção.
-
-**Relação com a implementação:** O ambiente é iniciado com `docker compose up --build -d` e contém sete containers: RabbitMQ, PostgreSQL, Redis, Ingestão, Agregação, Alertas e Consulta. Os healthchecks usam `rabbitmq-diagnostics`, `pg_isready` e `redis-cli ping`; o workflow do GitHub Actions valida o Compose e executa `ruff` e `pytest` para os quatro serviços.
+| ADR | Decisão | Status |
+|---|---|---|
+| [0001](docs/adr/0001-microsservicos-cqrs.md) | Microsserviços com CQRS | Aceito |
+| [0002](docs/adr/0002-rabbitmq-fanout-dlq.md) | RabbitMQ com fanout e Dead-Letter Queue | Aceito |
+| [0003](docs/adr/0003-postgresql-redis-materialized-views.md) | PostgreSQL e Redis com Materialized Views | Aceito |
+| [0004](docs/adr/0004-docker-compose-ci.md) | Docker Compose para desenvolvimento e CI | Aceito |
+| [0005](docs/adr/0005-api-gateway-kong.md) | API Gateway com Kong em modo DB-less | Aceito |
 
 ## 3. Stack tecnológico
 
@@ -359,6 +207,7 @@ Os ADRs abaixo registram, nesta entrega, o contexto, a decisão e os trade-offs 
 | Lint | Ruff 0.7.4 | Verificação estática dos serviços | **Gleice:** fornece feedback rápido e uniforme sobre problemas de estilo e qualidade do código Python. |
 | Qualidade e integração contínua | GitHub Actions | Lint, testes automatizados e validação do Compose | **Gleice:** automatiza as verificações a cada alteração e reduz o risco de integrar uma configuração inválida. |
 | Diagramas | Mermaid no Markdown | Documentação C4 versionada no repositório | **Gleice:** mantém a arquitetura próxima do código, revisável por pull request e renderizável diretamente no GitHub. |
+| API Gateway (planejado) | Kong em modo DB-less | Autenticação JWT por unidade, rate limiting por unidade e roteamento para Ingestão e Consulta | **Equipe ([ADR 0005](docs/adr/0005-api-gateway-kong.md)):** oferece plugins nativos de JWT e de rate limiting contado por consumidor autenticado, que correspondem ao requisito "uma unidade, um limite". No Traefik gratuito, a validação de JWT exigiria `forwardAuth` ou plugin da comunidade. |
 
 ### 3.1 Stack executável nesta entrega
 
@@ -387,7 +236,7 @@ As tecnologias e padrões abaixo fazem parte da proposta, mas não devem ser con
 | RabbitMQ com fanout, filas de consumidores, retry e DLQ | Planejado | O broker está no Compose; topologia, consumidores e política de retry/DLQ ainda precisam ser implementados. |
 | PostgreSQL com dados de domínio e Materialized Views | Planejado | O banco está no Compose; esquema, migrações e views ainda não estão definidos no código atual. |
 | Redis como cache-aside do Serviço de Consulta | Planejado | Redis está no Compose; integração e política de expiração ainda não foram implementadas. |
-| API Gateway | Em aberto | Kong ou Traefik; autenticação JWT, rate limiting e roteamento estão previstos. |
+| API Gateway | Decidido, não implementado | Kong em modo DB-less ([ADR 0005](docs/adr/0005-api-gateway-kong.md)); container, autenticação JWT, rate limiting e roteamento serão implementados no Projeto 03. |
 | Painel | Planejado | Grafana é a tecnologia prevista; não há container configurado. |
 | Coleta de métricas | Planejado | Prometheus é a tecnologia prevista; não há container nem endpoints `/metrics` configurados. |
 | Carga e simulação | Planejado | k6 está previsto para carga; o simulador de unidades também não está no repositório atual. |
@@ -442,7 +291,7 @@ O Retry Pattern repete o processamento em falhas transitórias. Mensagens malfor
 
 ### 4.5 API Gateway
 
-O Gateway está previsto entre as unidades/painel e os microsserviços. Deverá validar JWT, aplicar rate limiting por unidade e rotear `POST` de notificações para Ingestão e `GET` de consultas para o Serviço de Consulta. Kong ou Traefik ainda não foi escolhido e o Gateway não está no Compose; os serviços expõem portas diretamente no desenvolvimento local.
+O Gateway está previsto entre as unidades/painel e os microsserviços. Deverá validar JWT, aplicar rate limiting por unidade e rotear `POST` de notificações para Ingestão e `GET` de consultas para o Serviço de Consulta. A tecnologia escolhida é o Kong em modo DB-less ([ADR 0005](docs/adr/0005-api-gateway-kong.md)), com um *consumer* por unidade e os plugins `jwt`, `rate-limiting` e `prometheus`. O Gateway ainda não está no Compose; os serviços expõem portas diretamente no desenvolvimento local.
 
 ### 4.6 Síntese dos padrões
 

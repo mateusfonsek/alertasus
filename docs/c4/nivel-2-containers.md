@@ -11,7 +11,7 @@ flowchart TB
     subgraph alertasus["AlertaSUS [Sistema de software]"]
         direction TB
 
-        gateway["<b>API Gateway</b><br/>[Kong ou Traefik]<br/><br/>Autentica as unidades (JWT), aplica rate limiting por unidade e roteia as requisições"]
+        gateway["<b>API Gateway</b><br/>[Kong, modo DB-less]<br/><br/>Autentica as unidades (JWT), aplica rate limiting por unidade e roteia as requisições"]
 
         ingestion["<b>Serviço de Ingestão</b><br/>[Python, FastAPI]<br/><br/>Valida a notificação, garante idempotência pelo ID e publica o evento no broker"]
 
@@ -76,7 +76,7 @@ Bordas tracejadas indicam containers planejados que ainda não estão no `docker
 
 | Container | Tecnologia | Responsabilidade | Porta local | Status |
 |---|---|---|---|---|
-| API Gateway | Kong ou Traefik | Ponto único de entrada. Valida o JWT de cada unidade e aplica rate limiting por unidade (HTTP 429 no excesso). | a definir | Planejado |
+| API Gateway | Kong (modo DB-less) | Ponto único de entrada. Valida o JWT de cada unidade e aplica rate limiting por unidade (HTTP 429 no excesso). | a definir | Planejado |
 | Serviço de Ingestão | Python 3.12, FastAPI | Valida o payload, descarta reenvios pelo ID da notificação e publica o evento. Responde rápido porque não processa nada além disso. | 8001 | Esqueleto no compose |
 | Broker de mensagens | RabbitMQ 3.13 | Exchange fanout copia cada evento para uma fila por consumidor. Mensagens que esgotam as tentativas vão para a DLQ. | 5672 / 15672 | No compose |
 | Serviço de Agregação | Python 3.12, FastAPI | Consome a fila de agregação e mantém as contagens por município, bairro e semana epidemiológica. | 8002 | Esqueleto no compose |
@@ -119,7 +119,7 @@ Bordas tracejadas indicam containers planejados que ainda não estão no `docker
 
 Estes itens afetam o diagrama e devem ser fechados nos ADRs (`docs/adr/`) ou no `docs/stack.md`. Depois disso, atualizar este arquivo.
 
-1. **Gateway: Kong ou Traefik.** A escolha muda só a tecnologia na caixa do Gateway.
+1. **Gateway: decidido.** O Kong em modo DB-less foi escolhido no [ADR 0005](../adr/0005-api-gateway-kong.md); a caixa do Gateway já exibe essa tecnologia.
 2. **Onde a Ingestão guarda os IDs já vistos (idempotência).** No compose atual, a Ingestão só tem acesso ao RabbitMQ. As opções são dar a ela acesso ao Redis ou ao PostgreSQL, ou deduplicar na Agregação com uma restrição `UNIQUE` no ID da notificação. Cada opção acrescenta ou move uma seta no diagrama.
 3. **Banco compartilhado.** Agregação, Alertas e Consulta usam o mesmo banco `alertasus`, o que é um *shared database* e não um *database-per-service*. Vale registrar esse trade-off num ADR: é mais simples para as Materialized Views, mas acopla os serviços ao mesmo esquema.
 4. **Origem dos dados do Grafana.** O diagrama segue a proposta (Grafana → Gateway → Consulta). A alternativa é o Grafana ler o PostgreSQL direto, mais simples de configurar, porém o painel deixaria de passar pelo cache e pela API de leitura.

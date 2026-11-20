@@ -60,7 +60,7 @@ flowchart LR
     PAINEL[Painel] --> GW
 ```
 
-Este diagrama é um resumo do fluxo. Os diagramas C4 (níveis 1 e 2) estão em [`docs/c4/`](docs/c4/) e consolidados no [`entrega-2.2.md`](entrega-2.2.md#1-diagrama-c4); eles detalham também a observabilidade (Prometheus) e indicam quais containers já fazem parte do Compose e quais ainda estão planejados. Os ADRs estão na seção 2 do mesmo documento.
+Este diagrama é um resumo do fluxo. Os diagramas C4 (níveis 1 e 2) estão em [`docs/c4/`](docs/c4/) e consolidados no [`entrega-2.2.md`](entrega-2.2.md#1-diagrama-c4); eles detalham também a observabilidade (Prometheus) e indicam quais containers já fazem parte do Compose e quais ainda estão planejados. Os ADRs estão em [`docs/adr/`](docs/adr/).
 
 ## Padrões arquiteturais e áreas técnicas
 
@@ -81,7 +81,7 @@ São cinco padrões da Seção 5 do enunciado, cobrindo quatro áreas. O mínimo
 | Serviços | Python 3.12 com FastAPI | No Compose (esqueletos com `/health`) |
 | Mensageria | RabbitMQ 3.13 (fanout exchange e DLQ nativas) | Broker no Compose; topologia pendente |
 | Dados | PostgreSQL 16 (Materialized Views) e Redis 7 (cache de consultas) | No Compose; modelo de dados e cache pendentes |
-| Gateway | Kong ou Traefik | Em aberto |
+| Gateway | Kong em modo DB-less ([ADR 0005](docs/adr/0005-api-gateway-kong.md)) | Decidido; implementação no Projeto 03 |
 | Painel e observabilidade | Grafana e Prometheus | Planejado |
 | Infra e CI | Docker Compose e GitHub Actions | Em uso |
 | Testes de carga | k6 | Planejado |
@@ -115,7 +115,7 @@ Versões, justificativas e itens pendentes estão em [docs/stack.md](docs/stack.
 | [`entrega-2.2.md`](entrega-2.2.md) | Documento consolidado do Projeto 02: C4, ADRs, stack, padrões, setup, divisão de responsabilidades e uso de IA |
 | [`docs/c4/`](docs/c4/) | Diagramas C4 níveis 1 (contexto) e 2 (containers) |
 | [`docs/stack.md`](docs/stack.md) | Stack configurado, portas, dependências e itens pendentes |
-| [`docs/adr/`](docs/adr/) | Reservado para ADRs em arquivos individuais; por ora os ADRs 0001 a 0004 estão no `entrega-2.2.md` |
+| [`docs/adr/`](docs/adr/) | ADRs em arquivos individuais (0001 a 0005) |
 
 ## Como executar
 
@@ -218,7 +218,7 @@ alertasus/
 │   └── query/
 └── docs/
     ├── c4/                      # diagramas C4 níveis 1 e 2
-    ├── adr/                     # reservado para ADRs individuais
+    ├── adr/                     # ADRs, um arquivo por decisão
     └── stack.md                 # stack configurado e itens pendentes
 ```
 
