@@ -172,25 +172,25 @@ As setas pontilhadas representam tráfego de observabilidade, fora do fluxo de n
 
 #### Pontos em aberto da arquitetura
 
-1. **Gateway: decidido.** O Kong em modo DB-less foi escolhido no [ADR 0005](docs/adr/0005-api-gateway-kong.md); a caixa do Gateway já exibe essa tecnologia.
+1. **Gateway: decidido.** O Kong em modo DB-less foi escolhido no [ADR 0005](../adr/0005-api-gateway-kong.md); a caixa do Gateway já exibe essa tecnologia.
 2. **Armazenamento dos IDs já vistos pela Ingestão.** No Compose atual, a Ingestão só tem acesso ao RabbitMQ. As alternativas são dar acesso ao Redis ou ao PostgreSQL, ou deduplicar na Agregação com uma restrição `UNIQUE` no ID da notificação.
 3. **Banco compartilhado.** Agregação, Alertas e Consulta usam o mesmo banco `alertasus`, caracterizando um *shared database*, e não *database-per-service*. Isso simplifica as Materialized Views, mas acopla os serviços ao mesmo esquema.
 4. **Origem dos dados do Grafana.** O diagrama segue a proposta de Grafana → Gateway → Consulta. Uma alternativa seria o Grafana ler o PostgreSQL diretamente, mas isso eliminaria o cache e a API de leitura.
 5. **Containers planejados fora do Compose.** Gateway, Grafana, Prometheus e Simulador ainda não fazem parte do ambiente executável desta entrega.
 
-- Referência dos arquivos-fonte: [`docs/c4/nivel-1-contexto.md`](docs/c4/nivel-1-contexto.md) e [`docs/c4/nivel-2-containers.md`](docs/c4/nivel-2-containers.md).
+- Referência dos arquivos-fonte: [`docs/c4/nivel-1-contexto.md`](../c4/nivel-1-contexto.md) e [`docs/c4/nivel-2-containers.md`](../c4/nivel-2-containers.md).
 
 ## 2. ADRs — Architecture Decision Records
 
-Os ADRs registram o contexto, a decisão, as alternativas e os trade-offs das principais escolhas arquiteturais. Cada registro fica em um arquivo próprio no diretório [`docs/adr/`](docs/adr/):
+Os ADRs registram o contexto, a decisão, as alternativas e os trade-offs das principais escolhas arquiteturais. Cada registro fica em um arquivo próprio no diretório [`docs/adr/`](../adr/):
 
 | ADR | Decisão | Status |
 |---|---|---|
-| [0001](docs/adr/0001-microsservicos-cqrs.md) | Microsserviços com CQRS | Aceito |
-| [0002](docs/adr/0002-rabbitmq-fanout-dlq.md) | RabbitMQ com fanout e Dead-Letter Queue | Aceito |
-| [0003](docs/adr/0003-postgresql-redis-materialized-views.md) | PostgreSQL e Redis com Materialized Views | Aceito |
-| [0004](docs/adr/0004-docker-compose-ci.md) | Docker Compose para desenvolvimento e CI | Aceito |
-| [0005](docs/adr/0005-api-gateway-kong.md) | API Gateway com Kong em modo DB-less | Aceito |
+| [0001](../adr/0001-microsservicos-cqrs.md) | Microsserviços com CQRS | Aceito |
+| [0002](../adr/0002-rabbitmq-fanout-dlq.md) | RabbitMQ com fanout e Dead-Letter Queue | Aceito |
+| [0003](../adr/0003-postgresql-redis-materialized-views.md) | PostgreSQL e Redis com Materialized Views | Aceito |
+| [0004](../adr/0004-docker-compose-ci.md) | Docker Compose para desenvolvimento e CI | Aceito |
+| [0005](../adr/0005-api-gateway-kong.md) | API Gateway com Kong em modo DB-less | Aceito |
 
 ## 3. Stack tecnológico
 
@@ -207,7 +207,7 @@ Os ADRs registram o contexto, a decisão, as alternativas e os trade-offs das pr
 | Lint | Ruff 0.7.4 | Verificação estática dos serviços | **Gleice:** fornece feedback rápido e uniforme sobre problemas de estilo e qualidade do código Python. |
 | Qualidade e integração contínua | GitHub Actions | Lint, testes automatizados e validação do Compose | **Gleice:** automatiza as verificações a cada alteração e reduz o risco de integrar uma configuração inválida. |
 | Diagramas | Mermaid no Markdown | Documentação C4 versionada no repositório | **Gleice:** mantém a arquitetura próxima do código, revisável por pull request e renderizável diretamente no GitHub. |
-| API Gateway (planejado) | Kong em modo DB-less | Autenticação JWT por unidade, rate limiting por unidade e roteamento para Ingestão e Consulta | **Equipe ([ADR 0005](docs/adr/0005-api-gateway-kong.md)):** oferece plugins nativos de JWT e de rate limiting contado por consumidor autenticado, que correspondem ao requisito "uma unidade, um limite". No Traefik gratuito, a validação de JWT exigiria `forwardAuth` ou plugin da comunidade. |
+| API Gateway (planejado) | Kong em modo DB-less | Autenticação JWT por unidade, rate limiting por unidade e roteamento para Ingestão e Consulta | **Equipe ([ADR 0005](../adr/0005-api-gateway-kong.md)):** oferece plugins nativos de JWT e de rate limiting contado por consumidor autenticado, que correspondem ao requisito "uma unidade, um limite". No Traefik gratuito, a validação de JWT exigiria `forwardAuth` ou plugin da comunidade. |
 
 ### 3.1 Stack executável nesta entrega
 
@@ -236,7 +236,7 @@ As tecnologias e padrões abaixo fazem parte da proposta, mas não devem ser con
 | RabbitMQ com fanout, filas de consumidores, retry e DLQ | Planejado | O broker está no Compose; topologia, consumidores e política de retry/DLQ ainda precisam ser implementados. |
 | PostgreSQL com dados de domínio e Materialized Views | Planejado | O banco está no Compose; esquema, migrações e views ainda não estão definidos no código atual. |
 | Redis como cache-aside do Serviço de Consulta | Planejado | Redis está no Compose; integração e política de expiração ainda não foram implementadas. |
-| API Gateway | Decidido, não implementado | Kong em modo DB-less ([ADR 0005](docs/adr/0005-api-gateway-kong.md)); container, autenticação JWT, rate limiting e roteamento serão implementados no Projeto 03. |
+| API Gateway | Decidido, não implementado | Kong em modo DB-less ([ADR 0005](../adr/0005-api-gateway-kong.md)); container, autenticação JWT, rate limiting e roteamento serão implementados no Projeto 03. |
 | Painel | Planejado | Grafana é a tecnologia prevista; não há container configurado. |
 | Coleta de métricas | Planejado | Prometheus é a tecnologia prevista; não há container nem endpoints `/metrics` configurados. |
 | Carga e simulação | Planejado | k6 está previsto para carga; o simulador de unidades também não está no repositório atual. |
@@ -291,7 +291,7 @@ O Retry Pattern repete o processamento em falhas transitórias. Mensagens malfor
 
 ### 4.5 API Gateway
 
-O Gateway está previsto entre as unidades/painel e os microsserviços. Deverá validar JWT, aplicar rate limiting por unidade e rotear `POST` de notificações para Ingestão e `GET` de consultas para o Serviço de Consulta. A tecnologia escolhida é o Kong em modo DB-less ([ADR 0005](docs/adr/0005-api-gateway-kong.md)), com um *consumer* por unidade e os plugins `jwt`, `rate-limiting` e `prometheus`. O Gateway ainda não está no Compose; os serviços expõem portas diretamente no desenvolvimento local.
+O Gateway está previsto entre as unidades/painel e os microsserviços. Deverá validar JWT, aplicar rate limiting por unidade e rotear `POST` de notificações para Ingestão e `GET` de consultas para o Serviço de Consulta. A tecnologia escolhida é o Kong em modo DB-less ([ADR 0005](../adr/0005-api-gateway-kong.md)), com um *consumer* por unidade e os plugins `jwt`, `rate-limiting` e `prometheus`. O Gateway ainda não está no Compose; os serviços expõem portas diretamente no desenvolvimento local.
 
 ### 4.6 Síntese dos padrões
 
@@ -341,7 +341,7 @@ As portas locais expostas são:
 
 ### 5.4 Integração contínua
 
-O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa uma matriz em paralelo para os quatro serviços (`ingestion`, `aggregation`, `alerts` e `query`). Para cada item da matriz, o CI:
+O workflow [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) executa uma matriz em paralelo para os quatro serviços (`ingestion`, `aggregation`, `alerts` e `query`). Para cada item da matriz, o CI:
 
 1. configura o Python 3.12;
 2. instala o `requirements.txt` específico do serviço;
